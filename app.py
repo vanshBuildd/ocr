@@ -18,8 +18,6 @@ app.config.update(
 celery = make_celery(app)
 # Set the API key and model name
 MODEL = "gpt-4o"
-OPEN_API_KEY = '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'
-
 client = OpenAI(api_key=OPEN_API_KEY)
 
 

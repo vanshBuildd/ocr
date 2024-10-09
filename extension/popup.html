@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Script Injector</title>
+  </head>
+  <body>
+    <button id="inject">Inject Script</button>
+    <script>
+      document.getElementById("inject").addEventListener("click", function () {
+        chrome.tabs.query(
+          { active: true, currentWindow: true },
+          function (tabs) {
+            chrome.scripting.executeScript({
+              target: { tabId: tabs[0].id },
+              files: ["inject.js"],
+            });
+          }
+        );
+      });
+    </script>
+  </body>
+</html>

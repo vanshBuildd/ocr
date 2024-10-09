@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Batch Document Processing with OCR</title>
+
+    <style>
+      /* [Styles are similar to your original code with necessary adjustments] */
+      /* General Reset */
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: Arial, sans-serif;
+        background: #f4f4f4;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 20px;
+      }
+
+      h1 {
+        color: #333;
+        font-size: 24px;
+        margin-bottom: 20px;
+      }
+
+      h3 {
+        color: #777;
+        margin: 20px 0;
+      }
+
+      #video {
+        width: 100%;
+        max-width: 300px;
+        border: 3px solid #333;
+        border-radius: 10px;
+        margin-bottom: 20px;
+      }
+
+      #capture-btn,
+      #upload-image {
+        background-color: #28a745;
+        color: white;
+        padding: 10px 20px;
+        border: none;
+        border-radius: 5px;
+        font-size: 16px;
+        cursor: pointer;
+        transition: background-color 0.3s ease;
+      }
+
+      #capture-btn:hover,
+      #upload-image:hover {
+        background-color: #218838;
+      }
+
+      #upload-image {
+        display: block;
+        margin: 10px auto;
+      }
+
+      #canvas {
+        display: none;
+      }
+
+      /* Preprocessed Images Gallery */
+      #preprocessed-gallery {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        margin-top: 20px;
+      }
+
+      .preprocessed-image-container {
+        position: relative;
+        margin: 10px;
+      }
+
+      .preprocessed-image {
+        max-width: 200px;
+        max-height: 200px;
+        border: 2px solid #333;
+        border-radius: 10px;
+      }
+
+      .remove-btn {
+        position: absolute;
+        top: 5px;
+        right: 5px;
+        background-color: rgba(220, 53, 69, 0.8);
+        color: white;
+        border: none;
+        border-radius: 50%;
+        cursor: pointer;
+        width: 24px;
+        height: 24px;
+        font-size: 16px;
+        line-height: 24px;
+        text-align: center;
+      }
+
+      /* Action Buttons */
+      #actions {
+        margin-top: 20px;
+      }
+
+      .action-btn {
+        background-color: #007bff;
+        color: white;
+        padding: 10px 20px;
+        border: none;
+        border-radius: 5px;
+        font-size: 16px;
+        cursor: pointer;
+        margin: 0 10px;
+        transition: background-color 0.3s ease;
+      }
+
+      .action-btn.cancel-btn {
+        background-color: #dc3545;
+      }
+
+      .action-btn:hover {
+        background-color: #0056b3;
+      }
+
+      .cancel-btn:hover {
+        background-color: #c82333;
+      }
+
+      /* Loading Spinner */
+      #loading {
+        display: none;
+        margin-top: 20px;
+        text-align: center;
+      }
+
+      /* Responsive styling */
+      @media (max-width: 768px) {
+        h1 {
+          font-size: 20px;
+        }
+
+        #capture-btn,
+        #upload-image {
+          width: 100%;
+          max-width: 300px;
+        }
+
+        .action-btn {
+          width: 100%;
+          max-width: 200px;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <h1>Capture or Upload Documents for Processing</h1>
+
+    <!-- Video element to display the camera -->
+    <video id="video" autoplay></video>
+
+    <!-- Button to capture the image -->
+    <button id="capture-btn">Capture Image</button>
+
+    <h3>OR</h3>
+
+    <!-- Input for uploading image -->
+    <input type="file" id="upload-image" accept="image/*" />
+
+    <!-- Checkbox for preprocessing option -->
+    <div>
+      <input type="checkbox" id="preprocess-checkbox" checked />
+      <label for="preprocess-checkbox">Preprocess image</label>
+    </div> <br>
+    <div>
+      <label for="series-select">Select Series:</label>
+      <select id="series-select">
+          <option value="A">A</option>
+          <option value="B">B</option>
+          <option value="C">C</option>
+      </select>
+  </div> <br>
+    <!-- Button to navigate to task list -->
+    <button id="task-list-btn" class="action-btn">View Task List</button>
+
+    <script>
+    // Add this to your existing JavaScript
+    document.getElementById('task-list-btn').addEventListener('click', function() {
+        window.location.href = '/task-list';
+    });
+    </script>
+
+
+    <!-- Canvas to display the captured image (hidden, for processing) -->
+    <canvas id="canvas"></canvas>
+
+    <!-- Preprocessed Images Gallery -->
+    <h2 id="preprocessed-title" style="display: none">Preprocessed Images</h2>
+    <div id="preprocessed-gallery"></div>
+
+    <!-- Action Buttons -->
+    <div id="actions" style="display: none">
+      <button class="action-btn" id="submit-all-btn">✔️ Submit All</button>
+      <button class="action-btn cancel-btn" id="cancel-btn">❌ Cancel</button>
+    </div>
+
+    <!-- Loading Spinner -->
+    <div id="loading">
+      <h3 id="loading-text">Processing...</h3>
+      <img
+        src="https://loading.io/spinners/spinner/index.ajax-spinner-preloader.svg"
+        alt="Loading"
+      />
+    </div>
+    <div id="result"></div>
+    <script>
+      // Initialize variables
+      const video = document.getElementById("video");
+      const captureBtn = document.getElementById("capture-btn");
+      const uploadInput = document.getElementById("upload-image");
+      const submitAllBtn = document.getElementById("submit-all-btn");
+      const cancelBtn = document.getElementById("cancel-btn");
+      const loadingDiv = document.getElementById("loading");
+      const loadingText = document.getElementById("loading-text");
+      const resultDiv = document.getElementById("result");
+      const preprocessedGallery = document.getElementById(
+        "preprocessed-gallery"
+      );
+      const actionsDiv = document.getElementById("actions");
+      const preprocessedTitle = document.getElementById("preprocessed-title");
+      let base64Image = "";
+      let preprocessedImages = []; // Array to store preprocessed images
+
+      // Initialize the application
+      function init() {
+        // Hide elements initially
+        actionsDiv.style.display = "none";
+        loadingDiv.style.display = "none";
+        preprocessedTitle.style.display = "none";
+
+        // Access the camera
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          navigator.mediaDevices
+            .getUserMedia({ video: true })
+            .then((stream) => {
+              video.srcObject = stream;
+              video.play();
+            })
+            .catch((err) => {
+              console.error("Error accessing camera: " + err);
+              video.style.display = "none";
+              captureBtn.style.display = "none";
+              alert("Camera not accessible. Please upload images instead.");
+            });
+        } else {
+          video.style.display = "none";
+          captureBtn.style.display = "none";
+          alert("Camera not supported. Please upload images instead.");
+        }
+
+        // Event listeners
+        captureBtn.addEventListener("click", captureImage);
+        uploadInput.addEventListener("change", uploadImage);
+        submitAllBtn.addEventListener("click", submitAllForProcessing);
+        cancelBtn.addEventListener("click", resetApplication);
+
+        document
+          .getElementById("preprocess-checkbox")
+          .addEventListener("change", function () {
+            localStorage.setItem("preprocess", this.checked);
+          });
+
+        // Set the checkbox state based on localStorage
+        document.getElementById("preprocess-checkbox").checked =
+          localStorage.getItem("preprocess") !== "false";
+      }
+
+      // Capture image from video stream
+      function captureImage() {
+        const canvas = document.getElementById("canvas");
+        const context = canvas.getContext("2d");
+
+        // Get the natural dimensions of the video stream
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+
+        // Draw the current video frame to the canvas
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        // Convert canvas to data URL (image format)
+        base64Image = canvas.toDataURL("image/png");
+
+        // Send the image to the backend for preprocessing
+        sendImageToBackend(base64Image);
+      }
+
+      // Handle image upload
+      function uploadImage(event) {
+        const files = event.target.files;
+        if (files.length > 0) {
+          for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            const reader = new FileReader();
+            reader.onload = function (e) {
+              base64Image = e.target.result;
+              // Send the image to the backend for preprocessing
+              sendImageToBackend(base64Image);
+            };
+            reader.readAsDataURL(file);
+          }
+        }
+      }
+
+      // Send image to backend for preprocessing
+      function sendImageToBackend(imageDataUrl) {
+        showLoading("Processing image...");
+        const shouldPreprocess = document.getElementById(
+          "preprocess-checkbox"
+        ).checked;
+        console.log(shouldPreprocess)
+        fetch("/preprocess", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            image: imageDataUrl,
+            preprocess: shouldPreprocess,
+          }),
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            hideLoading();
+            if (data.processed_image) {
+              // Display the processed image in the gallery
+              addPreprocessedImage(data.processed_image);
+            } else {
+              alert("Error processing image.");
+            }
+          })
+          .catch((err) => {
+            hideLoading();
+            console.error(err);
+            alert("Error sending image to backend.");
+          });
+      }
+
+      // Add preprocessed image to the gallery
+      function addPreprocessedImage(imageDataUrl) {
+        preprocessedTitle.style.display = "block";
+        actionsDiv.style.display = "block";
+
+        // Store the preprocessed image
+        preprocessedImages.push(imageDataUrl);
+
+        // Create image container
+        const container = document.createElement("div");
+        container.className = "preprocessed-image-container";
+
+        // Create image element
+        const img = document.createElement("img");
+        img.src = imageDataUrl;
+        img.className = "preprocessed-image";
+
+        // Create remove button
+        const removeBtn = document.createElement("button");
+        removeBtn.className = "remove-btn";
+        removeBtn.innerText = "✖";
+        removeBtn.onclick = () => {
+          // Remove image from array
+          const index = preprocessedImages.indexOf(imageDataUrl);
+          if (index > -1) {
+            preprocessedImages.splice(index, 1);
+          }
+          // Remove image from gallery
+          preprocessedGallery.removeChild(container);
+          // Hide sections if no images left
+          if (preprocessedImages.length === 0) {
+            preprocessedTitle.style.display = "none";
+            actionsDiv.style.display = "none";
+          }
+        };
+
+        // Append elements
+        container.appendChild(img);
+        container.appendChild(removeBtn);
+        preprocessedGallery.appendChild(container);
+      }
+
+      // Submit all images for OCR and GPT processing
+      function submitAllForProcessing() {
+        if (preprocessedImages.length === 0) {
+          alert("No images to submit.");
+          return;
+        }
+
+        showLoading("Submitting images for processing...");
+        const series = document.getElementById("series-select").value;
+
+        // Send all preprocessed images to the backend for processing
+        fetch("/submit-task", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ images: preprocessedImages, series: series }),
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            hideLoading();
+            if (data.task_id) {
+              alert("Task added to queue.");
+              resetApplication();
+            } else {
+              alert("Error submitting images for processing.");
+            }
+          })
+          .catch((err) => {
+            hideLoading();
+            console.error(err);
+            alert("Error submitting images for processing.");
+          });
+      }
+
+      // Reset the application
+      function resetApplication() {
+        window.location.reload();
+      }
+
+      // Show loading spinner with optional text
+      function showLoading(text = "Processing...") {
+        loadingDiv.style.display = "block";
+        loadingText.innerText = text;
+      }
+
+      // Hide loading spinner
+      function hideLoading() {
+        loadingDiv.style.display = "none";
+      }
+
+      // Initialize the application when the page loads
+      window.onload = init;
+    </script>
+  </body>
+</html>

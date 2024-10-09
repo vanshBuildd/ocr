@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document Preprocessing with OCR</title>
+
+  <style>
+    /* General Reset */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f4f4;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
+
+    h1 {
+      color: #333;
+      font-size: 24px;
+      margin-bottom: 20px;
+    }
+
+    h3 {
+      color: #777;
+      margin: 20px 0;
+    }
+
+    #video {
+      width: 100%;
+      max-width: 300px;
+      border: 3px solid #333;
+      border-radius: 10px;
+      margin-bottom: 20px;
+    }
+
+    #capture-btn,
+    #upload-image {
+      background-color: #28a745;
+      color: white;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 5px;
+      font-size: 16px;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+    }
+
+    #capture-btn:hover,
+    #upload-image:hover {
+      background-color: #218838;
+    }
+
+    #upload-image {
+      display: block;
+      margin: 10px auto;
+    }
+
+    #canvas {
+      display: none;
+    }
+
+    /* Preprocessed Image */
+    #processed-img {
+      display: block;
+      max-width: 100%;
+      height: auto;
+      border: 2px solid #333;
+      border-radius: 10px;
+      margin-top: 20px;
+    }
+
+    h2 {
+      color: #333;
+      margin-top: 30px;
+      font-size: 20px;
+    }
+
+    /* Correct and Cancel Buttons */
+    #actions {
+      margin-top: 20px;
+    }
+
+    .action-btn {
+      background-color: #007bff;
+      color: white;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 5px;
+      font-size: 16px;
+      cursor: pointer;
+      margin: 0 10px;
+      transition: background-color 0.3s ease;
+    }
+
+    .action-btn.cancel-btn {
+      background-color: #dc3545;
+    }
+
+    .action-btn:hover {
+      background-color: #0056b3;
+    }
+
+    .cancel-btn:hover {
+      background-color: #c82333;
+    }
+
+    /* Loading Spinner */
+    #loading {
+      display: none;
+      margin-top: 20px;
+    }
+
+    /* Responsive styling */
+    @media (max-width: 768px) {
+      h1 {
+        font-size: 20px;
+      }
+
+      #capture-btn,
+      #upload-image {
+        width: 100%;
+        max-width: 300px;
+      }
+
+      #processed-img {
+        max-width: 90%;
+      }
+
+      .action-btn {
+        width: 100%;
+        max-width: 200px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Capture or Upload Document for Preprocessing</h1>
+
+  <!-- Video element to display the camera -->
+  <video id="video" autoplay></video>
+
+  <!-- Button to capture the image -->
+  <button id="capture-btn">Capture Image</button>
+
+  <h3>OR</h3>
+
+  <!-- Input for uploading image -->
+  <input type="file" id="upload-image" accept="image/*">
+
+  <!-- Canvas to display the captured image (hidden, for processing) -->
+  <canvas id="canvas"></canvas>
+
+  <!-- Display the preprocessed image -->
+  <h2>Preprocessed Image</h2>
+  <img id="processed-img" src="" alt="Preprocessed Image" />
+
+  <!-- Action Buttons -->
+  <div id="actions">
+    <button class="action-btn" id="correct-btn">✔️ Correct</button>
+    <button class="action-btn cancel-btn" id="cancel-btn">❌ Cancel</button>
+  </div>
+
+  <!-- Loading Spinner -->
+  <div id="loading">
+    <h3>Processing...</h3>
+    <img src="https://loading.io/spinners/spinner/index.ajax-spinner-preloader.svg" alt="Loading" />
+  </div>
+  <div id="result"></div>
+  <script>
+    const OCR_API_KEY = "K85136675288957";  // Replace this with your actual OCR API key.
+
+    // Access the camera and stream video to the video element
+    const video = document.getElementById('video');
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(stream => {
+        video.srcObject = stream;
+      })
+      .catch(err => {
+        console.error("Error accessing camera: " + err);
+      });
+
+    // Capture button functionality
+    const captureBtn = document.getElementById('capture-btn');
+    captureBtn.addEventListener('click', () => {
+      const canvas = document.getElementById('canvas');
+      const context = canvas.getContext('2d');
+
+      // Get the natural dimensions of the video stream
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      // Draw the current video frame to the canvas
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      // Convert canvas to data URL (image format)
+      const imageDataUrl = canvas.toDataURL('image/png');
+
+      // Send the image to the backend for preprocessing
+      sendImageToBackend(imageDataUrl);
+    });
+
+    // Image upload functionality
+    const uploadInput = document.getElementById('upload-image');
+    uploadInput.addEventListener('change', function (event) {
+      const file = event.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = function (e) {
+          const img = new Image();
+          img.src = e.target.result;
+          img.onload = function () {
+            const canvas = document.getElementById('canvas');
+            const context = canvas.getContext('2d');
+
+            // Set canvas size to the uploaded image size
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+
+            // Draw the uploaded image to the canvas without resizing
+            context.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+            // Convert canvas to data URL (image format)
+            const imageDataUrl = canvas.toDataURL('image/png');
+
+            // Send the image to the backend for preprocessing
+            sendImageToBackend(imageDataUrl);
+          };
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+
+    // Function to send the image to the backend for preprocessing
+    function sendImageToBackend(imageDataUrl) {
+      const resultDiv = document.getElementById('result');
+      fetch('/preprocess', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ image: imageDataUrl })
+      })
+        .then(response => response.json())
+        .then(data => {
+          if (data.processed_image) {
+            // Display the preprocessed image
+            const processedImg = document.getElementById('processed-img');
+            processedImg.src = data.processed_image;
+
+            // Ensure the image is displayed at mobile-friendly dimensions
+            processedImg.style.width = '90%';
+            processedImg.style.maxWidth = '300px';
+          }
+        })
+        .catch(err => console.error(err));
+    }
+
+    // Function to show the loading spinner
+    function showLoading() {
+      document.getElementById('loading').style.display = 'block';
+    }
+
+    // Function to hide the loading spinner
+    function hideLoading() {
+      document.getElementById('loading').style.display = 'none';
+    }
+
+    // Correct button functionality
+    // Correct button functionality
+    // Correct button functionality using base64 image directly
+    const correctBtn = document.getElementById('correct-btn');
+    correctBtn.addEventListener('click', () => {
+      showLoading();
+
+      // Extract base64 data from the image
+      const base64Image = document.getElementById('processed-img').src.split(',')[1];  // Remove 'data:image/jpeg;base64,' part
+
+      // Send base64 image to OCR.space
+      fetch('https://api.ocr.space/parse/image', {
+        method: 'POST',
+        headers: {
+          'apikey': OCR_API_KEY,  // Your OCR API key here
+          'Content-Type': 'application/x-www-form-urlencoded'  // Correct content type for form data
+        },
+        body: new URLSearchParams({
+          base64Image: 'data:image/png;base64,' + base64Image,  // Ensure correct format
+          language: 'eng',
+          isOverlayRequired: false,
+          OCREngine: 2,
+          isTable: true
+        })
+      })
+        .then(response => response.json())
+        .then(data => {
+          if (data.ParsedResults && data.ParsedResults.length > 0) {
+            const ocrText = data.ParsedResults[0].ParsedText;
+            console.log(ocrText);
+            // Pass the OCR text to the GPT API
+            fetch('/gpt-api', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ocr_text: ocrText })
+            })
+              .then(response => response.json())
+              .then(gptData => {
+                hideLoading();
+                console.log(gptData)
+                const resultDiv = document.getElementById('result');
+                resultDiv.innerHTML = JSON.stringify(gptData.html_output);
+
+                // if (gptData.gpt_output) {
+                //   // Redirect or load a new page showing the GPT output
+                //   window.location.href = '/result?output=' + encodeURIComponent(gptData.gpt_output);
+                // }
+              });
+          } else {
+            console.error("OCR failed: ", data.ErrorMessage);
+          }
+        })
+        .catch(err => {
+          hideLoading();
+          console.error(err);
+        });
+    });
+
+    // Cancel button functionality
+    const cancelBtn = document.getElementById('cancel-btn');
+    cancelBtn.addEventListener('click', () => {
+      // Reload the page to reset everything
+      window.location.reload();
+    });
+  </script>
+</body>
+
+</html>

@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=production
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - OCR_API_KEY=${OCR_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SHEETS_API_URL=${SHEETS_API_URL}
+    volumes:
+      - ./:/app
+    depends_on:
+      - redis
+    command: gunicorn --bind 0.0.0.0:5000 app:app
+
+  celery_worker:
+    build: .
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - OCR_API_KEY=${OCR_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SHEETS_API_URL=${SHEETS_API_URL}
+    volumes:
+      - ./:/app
+    depends_on:
+      - redis
+    command: celery -A tasks worker --loglevel=info
+
+  redis:
+    image: "redis:alpine"
+    ports:
+      - "6379:6379"
+
+volumes:
+  redis_data:

@@ -1,3 +1,4 @@
+# Use Python 3.9 slim image as the base
 FROM python:3.9-slim
 
 # Install system dependencies
@@ -9,6 +10,7 @@ RUN apt-get update && apt-get install -y \
     libxrender-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# Set the working directory in the container
 WORKDIR /app
 
 # Copy requirements file
@@ -27,5 +29,8 @@ EXPOSE 8080
 # Set the PATH to include the local bin directory where gunicorn is installed
 ENV PATH="/usr/local/bin:${PATH}"
 
+# Make the start script executable
+RUN chmod +x start.sh
+
 # Command to run the application
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "app:app"]
+CMD ["./start.sh"]

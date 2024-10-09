@@ -8,4 +8,4 @@ requests
 python-dotenv
 openai
 gunicorn
-honcho==1.0.4
+honcho

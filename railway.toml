@@ -2,9 +2,9 @@
 builder = "nixpacks"
 
 [deploy]
-startCommand = "gunicorn app:app"
+startCommand = "sh -c 'gunicorn app:app & celery -A tasks worker --loglevel=info'"
 healthcheckPath = "/"
 healthcheckTimeout = 100
 
 [nixpacks]
-aptPackages = ["libgl1-mesa-glx", "libglib2.0-0"]
+aptPackages = ["libgl1-mesa-glx", "libglib2.0-0", "libsm6", "libxext6", "libxrender-dev"]

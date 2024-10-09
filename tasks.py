@@ -44,19 +44,29 @@ client = OpenAI(api_key=OPEN_API_KEY)
 # Initialize logger
 logger = get_task_logger(__name__)
 
-# Configure Celery
+redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+redis_client = redis.from_url(redis_url)
+
+# Update Celery configuration
 celery = Celery(
     'tasks',
-    broker=os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0'),
-    backend=os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
+    broker=redis_url,
+    backend=redis_url
 )
 
-# Initialize Redis client for task metadata storage using environment variables
-redis_client = redis.Redis(
-    host=os.getenv('REDIS_HOST', 'localhost'),
-    port=int(os.getenv('REDIS_PORT', 6379)),
-    db=int(os.getenv('REDIS_DB', 0))
-)
+# Configure Celery
+# celery = Celery(
+#     'tasks',
+#     broker=os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0'),
+#     backend=os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
+# )
+
+# # Initialize Redis client for task metadata storage using environment variables
+# redis_client = redis.Redis(
+#     host=os.getenv('REDIS_HOST', 'localhost'),
+#     port=int(os.getenv('REDIS_PORT', 6379)),
+#     db=int(os.getenv('REDIS_DB', 0))
+# )
 
 # OpenAI API Configuration
 

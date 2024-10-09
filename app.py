@@ -1,192 +1,44 @@
+# app.py
+
 import os
 import cv2
-import numpy as np
 import base64
 from flask import Flask, request, jsonify, send_from_directory
-from io import BytesIO
-from PIL import Image, ImageDraw, ImageFont
 from datetime import datetime
-from openai import OpenAI
-from celery_app import make_celery
-import requests
+from celery import Celery
+from celery.result import AsyncResult
+import redis
+from datetime import datetime
 
+# Import the task from tasks.py
+from tasks import process_images_task, preprocess_image
+
+# Initialize Flask app
 app = Flask(__name__)
+
+# Configure Celery
+redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
 app.config.update(
-    CELERY_BROKER_URL='redis://localhost:6379/0',
-    CELERY_RESULT_BACKEND='redis://localhost:6379/0'
+    CELERY_BROKER_URL=redis_url,
+    CELERY_RESULT_BACKEND=redis_url
 )
-celery = make_celery(app)
-# Set the API key and model name
-MODEL = "gpt-4o"
-client = OpenAI(api_key=OPEN_API_KEY)
 
+# Initialize Celery
+celery = Celery(
+    app.import_name,
+    broker=app.config['CELERY_BROKER_URL'],
+    backend=app.config['CELERY_RESULT_BACKEND']
+)
+celery.conf.update(app.config)
 
+# Initialize Redis client
+redis_client = redis.from_url(redis_url)
 # Path for storing temporary images
 TEMP_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'temp')
 
 # Ensure the temp folder exists
 if not os.path.exists(TEMP_FOLDER):
     os.makedirs(TEMP_FOLDER)
-
-# Function to append timestamp on an image
-
-
-def extract_table_from_ocr(ocr_text):
-    prompt = f"""
-
-You are an AI assistant specialized in extracting structured information from OCR-processed text. Your task is to analyze the following OCR-extracted text and create a html table with the following columns: Product Details, Rate, GST, NOS, Quantity, and Amount.
-
-Instructions:
-1. Carefully read the OCR-extracted text provided.
-2. Identify information related to products, Rates, GST, NOS (if applicable), quantities, and amounts.
-3. Organize this information into an HTML table format.
-4. If any information is missing or unclear, mark it as "N/A" in the table.
-5. PLEASE DO NOT WRITE ANYTHING ELSE APART FROM THE HTML TABLE
-
-Please provide the extracted information in the following HTML table format:
-
-<table border="1">
-    <tr>
-        <th>Product Details</th>
-        <th>HSN Code </th>
-        <th>Rate</th>
-        <th>GST</th>
-        <th>NOS</th>
-        <th>Quantity</th>
-        <th>Amount</th>
-    </tr>
-    <tr>
-        <td>[Product 1]</td>
-        <th>[HSN Code 1] </th>
-        <td>[Rate 1]</td>
-        <td>[GST 1]</td>
-        <td>[NOS 1]</td>
-        <td>[Quantity 1]</td>
-        <td>[Amount 1]</td>
-    </tr>
-    <!-- More rows as needed -->
-</table>
-    """
-
-    response = client.chat.completions.create(
-        model=MODEL,
-        messages=[
-            {"role": "system", "content": prompt},
-            {"role": "user", "content": ocr_text}
-        ],
-
-    )
-
-    return response.choices[0].message.content
-
-
-def append_timestamp(image, text):
-    # Convert OpenCV image to PIL format
-    pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-
-    # Add timestamp text
-    draw = ImageDraw.Draw(pil_image)
-    font = ImageFont.load_default()
-    text_position = (10, 10)  # Position at the top-left corner
-    draw.text(text_position, text, font=font, fill=(255, 255, 255))
-
-    # Convert PIL image back to OpenCV format
-    return cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
-
-# Preprocess image (convert to grayscale, threshold, blur)
-
-
-def preprocess_image(image_path):
-    image = cv2.imread(image_path)
-
-    # Convert to grayscale
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-    # Apply thresholding
-    _, thresh = cv2.threshold(
-        gray, 180, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
-
-    # Apply median blur
-    blurred = cv2.medianBlur(thresh, 3)
-
-    # Append timestamp to the processed image
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    processed_with_timestamp = append_timestamp(
-        blurred, f"Processed: {timestamp}")
-
-    return processed_with_timestamp
-
-# Decode base64 image to OpenCV format and save it
-
-
-@celery.task(bind=True)
-def process_image_task(self, image_path):
-    # Update task state to 'Processing'
-    self.update_state(state='PROCESSING', meta={
-                      'progress': 'Starting preprocessing'})
-
-    # Preprocess the saved image
-    processed_image = preprocess_image(image_path)
-
-    # Perform OCR
-    self.update_state(state='PROCESSING', meta={'progress': 'Performing OCR'})
-    ocr_text = perform_ocr(processed_image)
-
-    # Process OCR text with GPT
-    self.update_state(state='PROCESSING', meta={
-                      'progress': 'Processing with GPT'})
-    gpt_output = extract_table_from_ocr(ocr_text)
-
-    # Save or store the result as needed
-    result = {'gpt_output': gpt_output}
-
-    return result
-
-
-def perform_ocr(image):
-    # Convert OpenCV image to base64
-    print("Performing OCR")
-    _, buffer = cv2.imencode('.png', image)
-    img_base64 = base64.b64encode(buffer).decode('utf-8')
-
-    # Retrieve the OCR API key from environment variables
-    OCR_API_KEY = "K85136675288957"
-    if not OCR_API_KEY:
-        raise ValueError("OCR_API_KEY environment variable not set.")
-
-    # Prepare the payload for the OCR.space API
-    payload = {
-        'base64Image': 'data:image/png;base64,' + img_base64,
-        'language': 'eng',
-        'isOverlayRequired': False,
-        'OCREngine': '2',
-        'isTable': 'true'
-    }
-
-    headers = {
-        'apikey': OCR_API_KEY,
-        'Content-Type': 'application/x-www-form-urlencoded'
-    }
-
-    # Send the request to the OCR.space API
-    response = requests.post('https://api.ocr.space/parse/image',
-                             data=payload,
-                             headers=headers)
-    result = response.json()
-
-    # Check if OCR was successful
-    if result.get('IsErroredOnProcessing'):
-        error_message = result.get('ErrorMessage', ['Unknown error'])[0]
-        raise Exception(f"OCR failed: {error_message}")
-
-    # Extract the OCR text
-    parsed_results = result.get('ParsedResults')
-    if parsed_results and len(parsed_results) > 0:
-        ocr_text = parsed_results[0].get('ParsedText', '')
-    else:
-        ocr_text = ''
-    print(ocr_text)
-    return ocr_text
 
 
 def save_base64_image(base64_str, filename):
@@ -207,19 +59,22 @@ def save_base64_image(base64_str, filename):
 
     return image_path
 
-# Encode OpenCV image to base64 without changing its size or quality
 
+def append_timestamp(image, text):
+    from PIL import Image, ImageDraw, ImageFont
+    import numpy as np
 
-def encode_image_to_base64(image):
-    # Save the processed image to a temporary location to ensure quality
-    temp_image_path = os.path.join(TEMP_FOLDER, "processed_image.png")
-    cv2.imwrite(temp_image_path, image)
+    # Convert OpenCV image to PIL format
+    pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
 
-    # Read the image as bytes and encode to base64
-    with open(temp_image_path, "rb") as image_file:
-        img_base64 = base64.b64encode(image_file.read()).decode('utf-8')
+    # Add timestamp text
+    draw = ImageDraw.Draw(pil_image)
+    font = ImageFont.load_default()
+    text_position = (10, 10)  # Position at the top-left corner
+    draw.text(text_position, text, font=font, fill=(255, 255, 255))
 
-    return 'data:image/png;base64,' + img_base64
+    # Convert PIL image back to OpenCV format
+    return cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
 
 # Serve the index.html from the frontend folder
 
@@ -228,60 +83,110 @@ def encode_image_to_base64(image):
 def index():
     return send_from_directory('frontend', 'index.html')
 
-# Preprocess the image and return the processed image
+
+@app.route('/task-list')
+def tasks():
+    return send_from_directory('frontend', 'tasks.html')
 
 
 @app.route('/preprocess', methods=['POST'])
 def preprocess():
     data = request.json
     image_base64 = data.get('image')
-    should_preprocess = data.get('preprocess', True)
-    print("preprocess", should_preprocess)
+    should_preprocess = data.get('preprocess', False)
+
     if image_base64:
         # Save the base64 image to a file
-        image_filename = "uploaded_image.png"
+        image_filename = f"uploaded_image_{datetime.now().timestamp()}.png"
         image_path = save_base64_image(image_base64, image_filename)
 
         if should_preprocess:
-            # Preprocess the saved image (grayscale, thresholding, blurring)
+            # Preprocess the image if requested
             processed_image = preprocess_image(image_path)
         else:
-            # If preprocessing is not requested, just read the image
+            # If no preprocessing is requested, just read the original image
             processed_image = cv2.imread(image_path)
 
-        # Encode the processed image back to base64 without altering dimensions or quality
-        processed_image_base64 = encode_image_to_base64(processed_image)
+        # Encode the processed image to base64
+        _, buffer = cv2.imencode('.png', processed_image)
+        processed_image_base64 = 'data:image/png;base64,' + \
+            base64.b64encode(buffer).decode('utf-8')
 
-        return jsonify({'processed_image': processed_image_base64})
+        # Return the processed image to the frontend
+        return jsonify({'processed_image': processed_image_base64}), 200
 
     return jsonify({'error': 'No image provided'}), 400
+# Endpoint to check the status of a task
 
 
-@app.route('/ocr-api', methods=['POST'])
-def ocr_api():
+@app.route('/task-status/<task_id>', methods=['GET'])
+def task_status(task_id):
+    task = AsyncResult(task_id, app=celery)
+    task_info = redis_client.hgetall(f"task:{task_id}")
+    response = {
+        'task_id': task_id,
+        'state': task.state,
+        'info': {
+            'progress': task_info.get(b'progress', b'').decode('utf-8'),
+            'result': task_info.get(b'result', b'').decode('utf-8'),
+            'error': task_info.get(b'error', b'').decode('utf-8'),
+        }
+    }
+    return jsonify(response)
+
+# Serve static files (CSS, JS, images, etc.)
+
+
+# Helper function to get and increment Bill No.
+def get_next_bill_no():
+    current_date = datetime.now().strftime('%Y-%m-%d')
+    bill_no_key = f"bill_no:{current_date}"
+    # Check if the date has changed
+    if not redis_client.exists(bill_no_key):
+        # Reset Bill No. for the new day
+        redis_client.set(bill_no_key, 1)
+    else:
+        # Increment Bill No.
+        redis_client.incr(bill_no_key)
+    # Get the current Bill No.
+    bill_no = int(redis_client.get(bill_no_key))
+    return bill_no
+
+# Modify the /submit-task endpoint
+
+
+@app.route('/submit-task', methods=['POST'])
+def submit_task():
     data = request.json
-    image_base64 = data.get('image')
+    images_base64 = data.get('images')
+    series = data.get('series')
 
-    # Perform OCR here (call your OCR service or library)
-    ocr_text = "Simulated OCR output from the image."
+    if images_base64 and isinstance(images_base64, list):
+        image_paths = []
+        time_str = datetime.now().strftime('%H:%M:%S')
+        date_str = datetime.now().strftime('%Y-%m-%d')
+        # Save each image and collect their paths
+        for idx, image_base64 in enumerate(images_base64):
+            image_filename = f"""processed_image_{
+                datetime.now().timestamp()}_{idx}.png"""
+            image_path = os.path.join(TEMP_FOLDER, image_filename)
+            with open(image_path, 'wb') as f:
+                f.write(base64.b64decode(image_base64.split(',')[1]))
+            image_paths.append(image_path)
 
-    return jsonify({'ocr_text': ocr_text})
+        # Get the Bill No., Time, and Date
+        bill_no = get_next_bill_no()
+        # time_str = datetime.now().strftime('%H:%M:%S')
+        # date_str = datetime.now().strftime('%Y-%m-%d')
 
+        # Enqueue the task with the list of image paths and metadata
+        task = process_images_task.delay(
+            image_paths, bill_no, time_str, date_str, series)
 
-@app.route('/gpt-api', methods=['POST'])
-def gpt_api():
-    data = request.json
-    ocr_text = data.get('ocr_text')
-    print(ocr_text)
-    gpt_output = extract_table_from_ocr(ocr_text)
+        # Return the task ID to the frontend
+        return jsonify({'task_id': task.id}), 202  # 202 Accepted
 
-    return jsonify({'html_output': gpt_output})
-
-
-@app.route('/result')
-def result():
-    gpt_output = request.args.get('output', '')
-    return f"<h1>GPT Output:</h1><p>{gpt_output}</p>"
+    return jsonify({'error': 'No images provided'}), 400
 
 
 @app.route('/<path:filename>')
@@ -289,5 +194,43 @@ def serve_static_files(filename):
     return send_from_directory('frontend', filename)
 
 
+@app.route('/tasks', methods=['GET'])
+def get_tasks():
+    show_today_only = request.args.get('today', 'false').lower() == 'true'
+    current_date = datetime.now().strftime('%Y-%m-%d')
+
+    task_keys = redis_client.keys('task:*')
+    tasks = []
+
+    for task_key in task_keys:
+        task_data = redis_client.hgetall(task_key)
+        task_info = {k.decode('utf-8'): v.decode('utf-8')
+                     for k, v in task_data.items()}
+
+        task_date = task_info.get('date', '')
+
+        # If filtering for today's tasks, skip tasks not from today
+        if show_today_only and task_date != current_date:
+            continue
+
+        # Include only the required fields
+        tasks.append({
+            'task_id': task_key.decode('utf-8').split(':')[1],
+            'bill_no': int(task_info.get('bill_no', 0)),
+            'time': task_info.get('time', ''),
+            'date': task_info.get('date', ''),
+            'state': task_info.get('state', 'UNKNOWN'),
+            'progress': task_info.get('progress', ''),
+            'result': task_info.get('result', ''),
+            'error': task_info.get('error', '')
+        })
+
+    # Sort tasks by Bill No.
+    tasks.sort(key=lambda x: x['bill_no'])
+
+    return jsonify(tasks)
+
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)

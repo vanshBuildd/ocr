@@ -2,7 +2,7 @@
 builder = "nixpacks"
 
 [deploy]
-startCommand = "gunicorn app:app"
+startCommand = "honcho start -f Procfile"
 healthcheckPath = "/"
 healthcheckTimeout = 100
 

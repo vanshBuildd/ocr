@@ -1,7 +1,7 @@
 Flask
-celery
+rq
 redis
-opencv-python
+opencv-python-headless
 Pillow
 numpy
 requests

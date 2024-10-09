@@ -16,12 +16,16 @@ COPY requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install gunicorn
 
 # Copy the rest of the application
 COPY . .
 
 # Expose the port the app runs on
 EXPOSE 8080
+
+# Set the PATH to include the local bin directory where gunicorn is installed
+ENV PATH="/usr/local/bin:${PATH}"
 
 # Command to run the application
 CMD ["gunicorn", "--bind", "0.0.0.0:8080", "app:app"]

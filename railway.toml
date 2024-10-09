@@ -2,7 +2,7 @@
 builder = "nixpacks"
 
 [deploy]
-startCommand = "honcho start -f procfile"
+startCommand = "honcho start -f Procfile"
 healthcheckPath = "/"
 healthcheckTimeout = 100
 
